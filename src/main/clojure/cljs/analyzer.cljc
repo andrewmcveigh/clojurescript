@@ -9,13 +9,13 @@
 (ns cljs.analyzer
   (:refer-clojure :exclude [macroexpand-1])
   (:require [cljs.util :as util]
-            [clojure.java.io :as io]
+            [#?(:clj clojure.java.io :cljs cljs.node.io) :as io]
             [clojure.string :as string]
             [clojure.set :as set]
             [cljs.env :as env]
             [cljs.js-deps :as deps]
             [cljs.tagged-literals :as tags]
-            [clojure.tools.reader :as reader]
+            [#?(:clj clojure.tools.reader :cljs cljs.tools.reader) :as reader]
             [clojure.tools.reader.reader-types :as readers]
             [clojure.edn :as edn])
   (:import [java.io File Reader PushbackReader]

@@ -9,7 +9,7 @@
 (ns ^{:doc "A namespace that exists solely to provide a place for \"compiler\"
 state that is accessed/maintained by many different components."}
   cljs.env
-  (:require [cljs.js-deps :refer (js-dependency-index)])
+  ;; (:require [cljs.js-deps :refer (js-dependency-index)])
   (:refer-clojure :exclude [ensure]))
 
 ;; bit of a misnomer, but: an atom containing a map that serves as the bag of
@@ -42,7 +42,7 @@ state that is accessed/maintained by many different components."}
   ([] (default-compiler-env {}))
   ([options]
      (atom {:options options
-            :js-dependency-index (js-dependency-index options)})))
+            :js-dependency-index {} #_(js-dependency-index options)})))
 
 (defmacro with-compiler-env
   "Evaluates [body] with [env] bound as the value of the `*compiler*` var in
@@ -51,11 +51,14 @@ this namespace."
   `(let [env# ~env
          env# (cond
                (map? env#) (atom env#)
-               (and (instance? clojure.lang.Atom env#)
+               (and (instance? #?(:clj clojure.lang.Atom :cljs cljs.core.Atom) env#)
                     (map? @env#)) env#
-               :default (throw (IllegalArgumentException.
-                                (str "Compiler environment must be a map or atom containing a map, not "
-                                     (class env#)))))]
+                    :default (throw #?(:clj (IllegalArgumentException.
+                                             (str "Compiler environment must be a map or atom containing a map, not "
+                                                  (class env#)))
+                                       :cljs (ex-info (str "Compiler environment must be a map or atom containing a map, not "
+                                                           (class env#))
+                                                      {:type :illegal-argument}))))]
      (binding [*compiler* env#] ~@body)))
 
 (defmacro ensure

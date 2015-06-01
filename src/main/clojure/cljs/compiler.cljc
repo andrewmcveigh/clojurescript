@@ -9,17 +9,17 @@
 (ns cljs.compiler
   (:refer-clojure :exclude [munge macroexpand-1])
   (:require [cljs.util :as util]
-            [clojure.java.io :as io]
+            [#?(:clj clojure.java.io :cljs cljs.node.io) :as io]
             [clojure.string :as string]
-            [clojure.tools.reader :as reader]
+            [#?(:clj clojure.tools.reader :cljs cljs.tools.reader) :as reader]
             [cljs.env :as env]
             [cljs.tagged-literals :as tags]
             [cljs.analyzer :as ana]
             [cljs.source-map :as sm]
             [clojure.data.json :as json]
             [cljs.js-deps :as deps])
-  (:import java.lang.StringBuilder
-           java.io.File))
+  #?(:clj (:import java.lang.StringBuilder java.io.File)
+     :cljs (:import goog.string.StringBuffer)))
 
 (set! *warn-on-reflection* true)
 
@@ -164,24 +164,44 @@
 (defn ^String emit-str [expr]
   (with-out-str (emit expr)))
 
-(defmulti emit-constant class)
-(defmethod emit-constant nil [x] (emits "null"))
-(defmethod emit-constant Long [x] (emits "(" x ")"))
-(defmethod emit-constant Integer [x] (emits x)) ; reader puts Integers in metadata
-(defmethod emit-constant Double [x] (emits x))
-(defmethod emit-constant BigDecimal [x] (emits (.doubleValue ^BigDecimal x)))
-(defmethod emit-constant clojure.lang.BigInt [x] (emits (.doubleValue ^clojure.lang.BigInt x)))
-(defmethod emit-constant String [x]
-  (emits (wrap-in-double-quotes (escape-string x))))
-(defmethod emit-constant Boolean [x] (emits (if x "true" "false")))
-(defmethod emit-constant Character [x]
-  (emits (wrap-in-double-quotes (escape-char x))))
+(defmulti emit-constant #?(:clj class :cljs type))
 
-(defmethod emit-constant java.util.regex.Pattern [x]
-  (if (= "" (str x))
-    (emits "(new RegExp(\"\"))")
-    (let [[_ flags pattern] (re-find #"^(?:\(\?([idmsux]*)\))?(.*)" (str x))]
-      (emits \/ (.replaceAll (re-matcher #"/" pattern) "\\\\/") \/ flags))))
+#?(:clj
+   (do
+     (defmethod emit-constant nil [x] (emits "null"))
+     (defmethod emit-constant Long [x] (emits "(" x ")"))
+     (defmethod emit-constant Integer [x] (emits x)) ; reader puts Integers in metadata
+     (defmethod emit-constant Double [x] (emits x))
+     (defmethod emit-constant BigDecimal [x] (emits (.doubleValue ^BigDecimal x)))
+     (defmethod emit-constant clojure.lang.BigInt [x] (emits (.doubleValue ^clojure.lang.BigInt x)))
+     (defmethod emit-constant String [x]
+       (emits (wrap-in-double-quotes (escape-string x))))
+     (defmethod emit-constant Boolean [x] (emits (if x "true" "false")))
+     (defmethod emit-constant Character [x]
+       (emits (wrap-in-double-quotes (escape-char x)))))
+   )
+
+#?(:cljs
+   (do
+     (defmethod emit-constant nil [x] (emits "null"))
+     (defmethod emit-constant js/Number [x] (emits x))
+     (defmethod emit-constant js/String [x]
+       (emits (wrap-in-double-quotes (escape-string x))))
+     (defmethod emit-constant js/Boolean [x] (emits (if x "true" "false")))
+     )
+   )
+
+#?(:clj
+   (defmethod emit-constant java.util.regex.Pattern [x]
+     (if (= "" (str x))
+       (emits "(new RegExp(\"\"))")
+       (let [[_ flags pattern] (re-find #"^(?:\(\?([idmsux]*)\))?(.*)" (str x))]
+         (emits \/ (.replaceAll (re-matcher #"/" pattern) "\\\\/") \/ flags))))
+   :cljs
+   (defmethod emit-constant js/RegExp [x]
+     (if (= "" (str x))
+       (emits "(new RegExp(\"\"))")
+       (emits (str x)))))
 
 (defn emits-keyword [kw]
   (let [ns   (namespace kw)
@@ -198,14 +218,14 @@
     (emit-constant (hash kw))
     (emits ")")))
 
-(defmethod emit-constant clojure.lang.Keyword [x]
+(defmethod emit-constant #?(:clj clojure.lang.Keyword :cljs cljs.core.Keyword)
+  [x]
   (if (-> @env/*compiler* :options :emit-constants)
     (let [value (-> @env/*compiler* ::ana/constant-table x)]
       (emits "cljs.core." value))
-    (emits-keyword x)
-    ))
+    (emits-keyword x)))
 
-(defmethod emit-constant clojure.lang.Symbol [x]
+(defmethod emit-constant #?(:clj clojure.lang.Symbol :cljs cljs.core.Symbol) [x]
   (let [ns     (namespace x)
         name   (name x)
         symstr (if-not (nil? ns)
@@ -225,10 +245,12 @@
 
 ;; tagged literal support
 
-(defmethod emit-constant java.util.Date [^java.util.Date date]
+(defmethod emit-constant #?(:clj java.util.Date :cljs js/Date)
+  #?(:clj [^java.util.Date date] :cljs [date])
   (emits "new Date(" (.getTime date) ")"))
 
-(defmethod emit-constant java.util.UUID [^java.util.UUID uuid]
+(defmethod emit-constant #?(:clj java.util.UUID :cljs cljs.core.UUID)
+  #?(:clj [^java.util.UUID uuid] :cljs [date])
   (emits "new cljs.core.UUID(\"" (.toString uuid) "\")"))
 
 (defmacro emit-wrap [env & body]
