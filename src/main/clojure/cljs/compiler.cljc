@@ -19,7 +19,8 @@
             [clojure.data.json :as json]
             [cljs.js-deps :as deps])
   #?(:clj (:import java.lang.StringBuilder java.io.File)
-     :cljs (:import goog.string.StringBuffer)))
+     :cljs (:import goog.string.StringBuffer
+                    cljs.node.io.types.file.File)))
 
 (set! *warn-on-reflection* true)
 
