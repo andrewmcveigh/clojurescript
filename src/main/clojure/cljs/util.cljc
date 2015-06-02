@@ -170,7 +170,7 @@
                   {:type :illegal-argument})))))
 
 (defn file-or-resource [s]
-  (or (and (.exists (io/file s)) (io/file s))
+  (or (and (#?(:clj .exists :cljs file/-exists?) (io/file s)) (io/file s))
       (io/resource s)))
 
 (defn topo-sort
