@@ -17,7 +17,8 @@
 
 #?(:cljs
    (ns cljs.util
-     (:require [cljs.node.io :as io]
+     (:require [cljs.nodejs :as node]
+               [cljs.node.io :as io]
                [cljs.tools.reader.impl.utils :refer [munge]]
                [clojure.string :as string]
                [clojure.set :as set]
@@ -158,11 +159,15 @@
 
 (defn last-modified [src]
   (cond
-    (file? src) (.lastModified ^File src)
+    (file? src) #?(:clj (.lastModified ^File src) :cljs (file/-modified src))
     (url? src) (.getLastModified (.openConnection ^URL src))
     :else
     (throw
-      (IllegalArgumentException. (str "Cannot get last modified for " src)))))
+      #?(:clj
+         (IllegalArgumentException. (str "Cannot get last modified for " src))
+         :cljs
+         (ex-info (str "Cannot get last modified for " src)
+                  {:type :illegal-argument})))))
 
 (defn file-or-resource [s]
   (or (and (.exists (io/file s)) (io/file s))
@@ -189,15 +194,23 @@
   (binding [*out* *err*]
     (apply println args)))
 
+#?(:clj
+   (defn nano-time []
+     (. System (nanoTime)))
+   :cljs
+   (defn nano-time []
+     (let [[seconds nanoseconds] (.hrtime node/process)]
+       (+ (* seconds 1.0e9) nanoseconds))))
+
 (defmacro measure
   "Like cljs.core/time but toggleable and takes a message string."
   {:added "1.0"}
   ([msg expr] `(measure true ~msg ~expr))
   ([enable msg expr]
     `(if ~enable
-       (let [start# (. System (nanoTime))
+       (let [start# (nano-time)
              ret# ~expr]
-         (debug-prn (str ~msg ", elapsed time:") (/ (double (- (. System (nanoTime)) start#)) 1000000.0) "msecs")
+         (debug-prn (str ~msg ", elapsed time:") (/ (double (- (nano-time) start#)) 1000000.0) "msecs")
          ret#)
        ~expr)))
 
@@ -205,6 +218,6 @@
   ([exp then] `(compile-if ~exp ~then nil))
   ([exp then else]
    (if (try (eval exp)
-            (catch Throwable _ false))
+            (catch #?(:clj Throwable :cljs js/Error) _ false))
      `(do ~then)
      `(do ~else))))
